@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<meta name="theme-color" content="#8b5cf6">
+  <title>MyDay — Task Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <main class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+    <div class="brand-mark">✦</div>
+    <span>My<span class="brand-light">Day</span></span>
+</div>
+      <div class="side-intro">
+        <p class="eyebrow">YOUR WORKSPACE</p>
+        <h1>Make today<br><span>count.</span></h1>
+        <p class="side-copy">Small steps, big progress. Keep your day moving forward.</p>
+      </div>
+      <div class="side-card">
+        <div class="side-card-icon">✧</div>
+        <p class="side-card-title">A little reminder</p>
+        <p class="side-card-copy">You don't have to do it all today. Just start with one thing.</p>
+      </div>
+      <div class="sidebar-footer"><span class="status-dot"></span> Your tasks are saved on this device</div>
+    </aside>
+
+    <section class="main-panel">
+     <header class="topbar">
+  <div>
+    <p class="eyebrow">WELCOME TO MYDAY</p>
+    <h2>Hello, {{ session.get('user_name') }} 👋</h2>
+  </div>
+
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <div class="date-chip">
+      <span>◷</span>
+      <span id="todayLabel">Today</span>
+    </div>
+
+    <a href="{{ url_for('logout') }}" class="date-chip"
+       style="text-decoration: none; color: inherit;">
+      Logout
+    </a>
+  </div>
+</header>
+      <section class="stats-grid">
+        <article class="stat-card stat-total"><div class="stat-top"><span>Total tasks</span><span class="stat-icon">▤</span></div><strong id="totalCount">0</strong><small>Everything on your list</small></article>
+        <article class="stat-card stat-done"><div class="stat-top"><span>Completed</span><span class="stat-icon">✓</span></div><strong id="doneCount">0</strong><small>Look at you go!</small></article>
+        <article class="stat-card stat-pending"><div class="stat-top"><span>In progress</span><span class="stat-icon">◷</span></div><strong id="pendingCount">0</strong><small>One step at a time</small></article>
+      </section>
+
+      <section class="progress-card">
+        <div class="progress-info"><div><p class="eyebrow">DAILY PROGRESS</p><h3 id="progressTitle">Let's get started</h3></div><strong id="progressPercent">0%</strong></div>
+        <div class="progress-track"><div id="progressFill"></div></div>
+      </section>
+
+      <section class="tasks-section">
+        <div class="section-heading"><div><p class="eyebrow">YOUR PLAN</p><h3>Task list</h3></div><button class="clear-btn" id="clearCompleted">Clear completed</button></div>
+        <form class="add-form" id="taskForm">
+          <div class="input-wrap"><span class="plus">＋</span><input id="taskInput" maxlength="180" placeholder="What do you need to get done?" autocomplete="off" required></div>
+          <select id="priorityInput" aria-label="Priority"><option>Medium</option><option>High</option><option>Low</option></select>
+          <input id="dateInput" type="date" aria-label="Due date">
+          <button class="add-btn" type="submit">Add task <span>↗</span></button>
+        </form>
+        <div class="toolbar"><div class="filters" role="group" aria-label="Task filters"><button class="filter active" data-filter="all">All <span id="allTabCount">0</span></button><button class="filter" data-filter="pending">Pending</button><button class="filter" data-filter="completed">Completed</button></div><label class="search-box"><span>⌕</span><input id="searchInput" placeholder="Search tasks..."></label></div>
+        <div id="taskList" class="task-list"></div>
+        <div id="emptyState" class="empty-state"><div class="empty-illustration">✦</div><h4>Nothing on your list yet</h4><p>Add your first task and make today count.</p></div>
+      </section>
+      <footer class="main-footer"><span>FOCUSFLOW</span><span>Plan with purpose. Finish with pride.</span></footer>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register(
+            "{{ url_for('static', filename='service-worker.js') }}"
+        )
+        .then(() => console.log("MyDay Service Worker Registered!"))
+        .catch((error) => console.log("Service Worker Error:", error));
+    });
+}
+</script>
+</body>
+</html>
