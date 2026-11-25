@@ -1,8 +1,11 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
-import sqlite3
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.errors import UniqueViolation
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import re
-from pathlib import Path
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -10,14 +13,18 @@ app = Flask(__name__)
 
 app.secret_key = os.environ.get("SECRET_KEY", "myday-development-secret-change-this")
 
-DB_PATH = Path(os.environ.get("DATABASE_PATH", Path(__file__).with_name("tasks.db")))
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
 # DATABASE CONNECTION
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is missing.")
+
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row
+    )
 
 
 # LOGIN REQUIRED
@@ -36,7 +43,7 @@ def init_db():
 
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL
@@ -45,22 +52,20 @@ def init_db():
 
         db.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 priority TEXT NOT NULL DEFAULT 'Medium',
                 due_date TEXT,
                 completed INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER
             )
         """)
 
-        columns = [
-            row["name"]
-            for row in db.execute("PRAGMA table_info(tasks)").fetchall()
-        ]
-
-        if "user_id" not in columns:
-            db.execute("ALTER TABLE tasks ADD COLUMN user_id INTEGER")
+        db.execute("""
+            ALTER TABLE tasks
+            ADD COLUMN IF NOT EXISTS user_id INTEGER
+        """)
 
 
 # SIGNUP PAGE
@@ -94,17 +99,15 @@ def signup():
             with get_db() as db:
 
                 cur = db.execute(
-                    "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+                    """
+                    INSERT INTO users (name, email, password)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                    """,
                     (name, email, hashed_password)
                 )
 
-                user_id = cur.lastrowid
-
-                # Assign old tasks to the first registered account.
-                db.execute(
-                    "UPDATE tasks SET user_id = ? WHERE user_id IS NULL",
-                    (user_id,)
-                )
+                user_id = cur.fetchone()["id"]
 
             session.clear()
             session["user_id"] = user_id
@@ -112,9 +115,10 @@ def signup():
 
             return redirect(url_for("home"))
 
-        except sqlite3.IntegrityError:
+        except UniqueViolation:
             flash("Email already registered.", "error")
             return redirect(url_for("signup"))
+
 
     return render_template("signup.html")
 
@@ -133,7 +137,7 @@ def login():
 
         with get_db() as db:
             user = db.execute(
-                "SELECT * FROM users WHERE email = ?",
+                "SELECT * FROM users WHERE email = %s",
                 (email,)
             ).fetchone()
 
@@ -177,13 +181,13 @@ def get_tasks():
         rows = db.execute(
             """
             SELECT * FROM tasks
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY completed ASC, id DESC
             """,
             (session["user_id"],)
         ).fetchall()
 
-    return jsonify([dict(row) for row in rows])
+    return jsonify(rows)
 
 
 # ADD TASK
@@ -208,20 +212,16 @@ def add_task():
 
     with get_db() as db:
 
-        cur = db.execute(
+        row = db.execute(
             """
             INSERT INTO tasks (title, priority, due_date, user_id)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
+            RETURNING *
             """,
             (title, priority, due_date, session["user_id"])
-        )
-
-        row = db.execute(
-            "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
-            (cur.lastrowid, session["user_id"])
         ).fetchone()
 
-    return jsonify(dict(row)), 201
+    return jsonify(row), 201
 
 
 # UPDATE TASK
@@ -235,7 +235,7 @@ def update_task(task_id):
     values = []
 
     if "completed" in data:
-        fields.append("completed = ?")
+        fields.append("completed = %s")
         values.append(1 if data["completed"] else 0)
 
     if "title" in data:
@@ -245,7 +245,7 @@ def update_task(task_id):
         if not title:
             return jsonify({"error": "Task name cannot be empty."}), 400
 
-        fields.append("title = ?")
+        fields.append("title = %s")
         values.append(title)
 
     if "priority" in data:
@@ -255,11 +255,11 @@ def update_task(task_id):
         if priority not in ("Low", "Medium", "High"):
             priority = "Medium"
 
-        fields.append("priority = ?")
+        fields.append("priority = %s")
         values.append(priority)
 
     if "due_date" in data:
-        fields.append("due_date = ?")
+        fields.append("due_date = %s")
         values.append(data["due_date"] or None)
 
     if not fields:
@@ -273,7 +273,7 @@ def update_task(task_id):
             f"""
             UPDATE tasks
             SET {', '.join(fields)}
-            WHERE id = ? AND user_id = ?
+            WHERE id = %s AND user_id = %s
             """,
             values
         )
@@ -282,11 +282,11 @@ def update_task(task_id):
             return jsonify({"error": "Task not found."}), 404
 
         row = db.execute(
-            "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+            "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
             (task_id, session["user_id"])
         ).fetchone()
 
-    return jsonify(dict(row))
+    return jsonify(row)
 
 
 # DELETE TASK
@@ -297,7 +297,7 @@ def delete_task(task_id):
     with get_db() as db:
 
         cur = db.execute(
-            "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+            "DELETE FROM tasks WHERE id = %s AND user_id = %s",
             (task_id, session["user_id"])
         )
 
@@ -315,7 +315,7 @@ def clear_completed():
     with get_db() as db:
 
         db.execute(
-            "DELETE FROM tasks WHERE completed = 1 AND user_id = ?",
+            "DELETE FROM tasks WHERE completed = 1 AND user_id = %s",
             (session["user_id"],)
         )
 
