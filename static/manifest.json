@@ -1,7 +1,7 @@
 {
-  "name": "MyDay - Task Manager",
-  "short_name": "MyDay",
-  "description": "Manage your daily tasks with MyDay",
+ "name": "Darlo - Task Manager",
+"short_name": "Darlo",
+  "description": "Manage your daily tasks with Darlo"
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -1,4 +1,4 @@
-const CACHE_NAME = "myday-v1";
+const CACHE_NAME = "darlo-v1";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
